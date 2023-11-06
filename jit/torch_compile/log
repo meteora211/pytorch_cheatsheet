@@ -1,0 +1,109 @@
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping __init__ /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping __enter__ /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping helper /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping __init__ /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping __enter__ /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,228] torch._dynamo.eval_frame: [DEBUG] skipping enable_dynamic /usr/local/lib/python3.10/dist-packages/torch/_dynamo/eval_frame.py
+[2023-11-06 13:57:17,274] torch._utils_internal: [INFO] dynamo _convert_frame_assert._compile: {'co_name': 'add', 'co_filename': '/workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py', 'co_firstlineno': 24, 'cache_size': 0}
+[2023-11-06 13:57:17,275] torch._dynamo.symbolic_convert: [INFO] Step 1: torchdynamo start tracing add /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py:24
+[2023-11-06 13:57:17,276] torch.fx.experimental.symbolic_shapes: [INFO] 0.0: create_env
+[2023-11-06 13:57:17,276] torch._subclasses.fake_tensor: [DEBUG] create_mode 0x7ff5199c7700
+[2023-11-06 13:57:17,278] torch._dynamo.symbolic_convert.__trace_source: [DEBUG] TRACE starts_line add /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py:24
+[2023-11-06 13:57:17,278] torch._dynamo.symbolic_convert.__trace_source: [DEBUG]     @dynamo.optimize(custom_backend)
+[2023-11-06 13:57:17,322] torch._dynamo.variables.builder: [DEBUG] wrap_to_fake L['a'] (10,) [<DimDynamic.STATIC: 2>] [None]
+[2023-11-06 13:57:17,323] torch._dynamo.variables.builder: [DEBUG] wrap_to_fake L['b'] (10,) [<DimDynamic.STATIC: 2>] [None]
+[2023-11-06 13:57:17,323] torch._dynamo.symbolic_convert.__trace_source: [DEBUG] TRACE starts_line add /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py:26
+[2023-11-06 13:57:17,323] torch._dynamo.symbolic_convert.__trace_source: [DEBUG]         c = a + b
+[2023-11-06 13:57:17,323] torch._dynamo.symbolic_convert: [DEBUG] TRACE LOAD_FAST a []
+[2023-11-06 13:57:17,323] torch._dynamo.symbolic_convert: [DEBUG] TRACE LOAD_FAST b [TensorVariable()]
+[2023-11-06 13:57:17,324] torch._dynamo.symbolic_convert: [DEBUG] TRACE BINARY_ADD None [TensorVariable(), TensorVariable()]
+[2023-11-06 13:57:17,324] torch._subclasses.fake_tensor: [DEBUG] FakeTensorMode.__torch_dispatch__: aten.add.Tensor
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert: [DEBUG] TRACE STORE_FAST c [TensorVariable()]
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert.__trace_source: [DEBUG] TRACE starts_line add /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py:27
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert.__trace_source: [DEBUG]         return c
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert: [DEBUG] TRACE LOAD_FAST c []
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert: [DEBUG] TRACE RETURN_VALUE None [TensorVariable()]
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert: [INFO] Step 1: torchdynamo done tracing add (RETURN_VALUE)
+[2023-11-06 13:57:17,326] torch._dynamo.symbolic_convert: [DEBUG] RETURN_VALUE triggered compile
+[2023-11-06 13:57:17,326] torch._dynamo.output_graph: [DEBUG] COMPILING GRAPH due to GraphCompileReason(reason='return_value', user_stack=[<FrameSummary file /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py, line 27 in add>], graph_break=False)
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG] TRACED GRAPH
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]  ===== __compiled_fn_0 =====
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]  <eval_with_key>.0 class GraphModule(torch.nn.Module):
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]     def forward(self, L_a_ : torch.Tensor, L_b_ : torch.Tensor):
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         l_a_ = L_a_
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         l_b_ = L_b_
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         # File: /workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py:26, code: c = a + b
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         add = l_a_ + l_b_;  l_a_ = l_b_ = None
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         return (add,)
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG]         
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph_code: [DEBUG] 
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] TRACED GRAPH
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG]  __compiled_fn_0 <eval_with_key>.0 opcode         name    target                   args          kwargs
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] -------------  ------  -----------------------  ------------  --------
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] placeholder    l_a_    L_a_                     ()            {}
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] placeholder    l_b_    L_b_                     ()            {}
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] call_function  add     <built-in function add>  (l_a_, l_b_)  {}
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] output         output  output                   ((add,),)     {}
+[2023-11-06 13:57:17,327] torch._dynamo.output_graph.__graph: [DEBUG] 
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] TRACED GRAPH TENSOR SIZES
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] ===== __compiled_fn_0 =====
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] l_a_: (10,)
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] l_b_: (10,)
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] add: (10,)
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph.__graph_sizes: [DEBUG] 
+[2023-11-06 13:57:17,333] torch._dynamo.output_graph: [INFO] Step 2: calling compiler function custom_backend
+[2023-11-06 13:57:17,334] torch._dynamo.output_graph: [INFO] Step 2: done compiler function custom_backend
+[2023-11-06 13:57:17,334] torch._utils_internal: [INFO] dynamo OutputGraph.call_user_compiler: {'co_name': 'add', 'co_filename': '/workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py', 'co_firstlineno': 24, 'op_count': 1, 'node_count': 4, 'input_count': 2}
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [INFO] 0.0: produce_guards
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['a'].size()[0] == 10
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['a'].stride()[0] == 1
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['a'].storage_offset() == 0
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['b'].size()[0] == 10
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['b'].stride()[0] == 1
+[2023-11-06 13:57:17,352] torch.fx.experimental.symbolic_shapes: [DEBUG] 0.0: Skipping guard L['b'].storage_offset() == 0
+[2023-11-06 13:57:17,352] torch._utils_internal: [INFO] dynamic produce_guards: {'co_name': 'add', 'co_filename': '/workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py', 'co_firstlineno': 24, 'num_guards': 0, 'free_symbols': 0}
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG] GUARDS:
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   hasattr(L['a'], '_dynamo_dynamic_indices') == False
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   hasattr(L['b'], '_dynamo_dynamic_indices') == False
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   ___is_grad_enabled()
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   not ___are_deterministic_algorithms_enabled()
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   ___is_torch_function_enabled()
+[2023-11-06 13:57:17,355] torch._dynamo.convert_frame.__guards: [DEBUG]   utils_device.CURRENT_DEVICE == None
+[2023-11-06 13:57:17,355] torch._utils_internal: [INFO] CompilationMetrics(frame_key='1', co_name='add', co_filename='/workspace/repos/pytorch_cheatsheet/jit/torch_compile/test.py', co_firstlineno=24, cache_size=0, guard_count=7, graph_op_count=1, graph_node_count=4, graph_input_count=2, entire_frame_compile_time_s=0.08044266700744629, backend_compile_time_s=0.0006763935089111328, fail_reason=None)
+[2023-11-06 13:57:17,355] torch._dynamo.eval_frame: [DEBUG] skipping _fn /usr/local/lib/python3.10/dist-packages/torch/_dynamo/eval_frame.py
+[2023-11-06 13:57:17,356] torch._dynamo.eval_frame: [DEBUG] skipping nothing /usr/local/lib/python3.10/dist-packages/torch/_dynamo/eval_frame.py
+[2023-11-06 13:57:17,356] torch._dynamo.eval_frame: [DEBUG] skipping __exit__ /usr/lib/python3.10/contextlib.py
+[2023-11-06 13:57:17,356] torch._dynamo.eval_frame: [DEBUG] skipping __exit__ /usr/lib/python3.10/contextlib.py
+opcode         name    target                   args          kwargs
+-------------  ------  -----------------------  ------------  --------
+placeholder    l_a_    L_a_                     ()            {}
+placeholder    l_b_    L_b_                     ()            {}
+call_function  add     <built-in function add>  (l_a_, l_b_)  {}
+output         output  output                   ((add,),)     {}
+  5           0 LOAD_FAST                1 (L_a_)
+              2 STORE_FAST               3 (l_a_)
+
+  6           4 LOAD_FAST                2 (L_b_)
+              6 STORE_FAST               4 (l_b_)
+
+  7           8 LOAD_FAST                3 (l_a_)
+             10 LOAD_FAST                4 (l_b_)
+             12 BINARY_ADD
+             14 STORE_FAST               5 (add)
+             16 LOAD_CONST               0 (None)
+             18 DUP_TOP
+             20 STORE_FAST               3 (l_a_)
+             22 STORE_FAST               4 (l_b_)
+
+  8          24 LOAD_FAST                5 (add)
+             26 BUILD_TUPLE              1
+             28 RETURN_VALUE
+
+res: tensor([ 0.0538,  0.7530, -0.5245,  2.2410, -1.0500, -1.4150, -1.4157,  0.2590,
+        -1.8996,  0.5625])
+[2023-11-06 13:57:17,357] torch._dynamo.utils: [INFO] TorchDynamo compilation metrics:
+[2023-11-06 13:57:17,357] torch._dynamo.utils: [INFO] Function                           Runtimes (s)
+[2023-11-06 13:57:17,357] torch._dynamo.utils: [INFO] -------------------------------  --------------
+[2023-11-06 13:57:17,357] torch._dynamo.utils: [INFO] _compile.<locals>.compile_inner          0.0804
+[2023-11-06 13:57:17,357] torch._dynamo.utils: [INFO] OutputGraph.call_user_compiler           0.0007
