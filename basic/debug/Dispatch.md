@@ -21,6 +21,37 @@ c = a + b
 
 ## Backtrace analysis
 
+`torch/include/ATen/ops/add_ops.h` generated `add__Tensor`
+
+```c++
+struct TORCH_API add_Tensor {
+  using schema = at::Tensor (const at::Tensor &, const at::Tensor &, const at::Scalar &);
+  using ptr_schema = schema*;
+  // See Note [static constexpr char* members for windows NVCC]
+  STATIC_CONSTEXPR_STR_INL_EXCEPT_WIN_CUDA(name, "aten::add")
+  STATIC_CONSTEXPR_STR_INL_EXCEPT_WIN_CUDA(overload_name, "Tensor")
+  STATIC_CONSTEXPR_STR_INL_EXCEPT_WIN_CUDA(schema_str, "add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor")
+  static at::Tensor call(const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha);
+  static at::Tensor redispatch(c10::DispatchKeySet dispatchKeySet, const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha);
+};
+```
+
+Find `OperatorHandle` for `add`
+```c++
+  return c10::Dispatcher::singleton()
+      .findSchemaOrThrow(add__Tensor::name, add__Tensor::overload_name)
+      .typed<add__Tensor::schema>();
+```
+
+Get `KernelFunction` for `add`
+
+```c++
+  auto dispatchKeySet = op.operatorDef_->op.dispatchKeyExtractor()
+    .template getDispatchKeySetUnboxed<Args...>(args...);
+  const KernelFunction& kernel = op.operatorDef_->op.lookup(dispatchKeySet);
+    return kernel.template call<Return, Args...>(op, dispatchKeySet, std::forward<Args>(args)...);
+```
+
 
 
 ### CPP call stack
@@ -68,9 +99,9 @@ static PyObject * THPVariable_add(PyObject* self_, PyObject* args, PyObject* kwa
       
       auto dispatch_add = [](const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha) -> at::Tensor {
         pybind11::gil_scoped_release no_gil;
-        return self.add(other, alpha);
+        return self.add(other, alpha); // <------- CALLED HERE 2nd
       };
-      return wrap(dispatch_add(self, _r.tensor(0), _r.scalar(1)));
+      return wrap(dispatch_add(self, _r.tensor(0), _r.scalar(1))); // <------- CALLED HERE 1st
     }
   }
   Py_RETURN_NONE;
@@ -90,6 +121,13 @@ inline at::Tensor Tensor::add(const at::Tensor & other, const at::Scalar & alpha
 #### `build/aten/src/ATen/Operators_2.cpp`
 
 ```c++
+// aten::add_.Tensor(Tensor(a!) self, Tensor other, *, Scalar alpha=1) -> Tensor(a!)
+static C10_NOINLINE c10::TypedOperatorHandle<add__Tensor::schema> create_add__Tensor_typed_handle() {
+  return c10::Dispatcher::singleton()
+      .findSchemaOrThrow(add__Tensor::name, add__Tensor::overload_name)
+      .typed<add__Tensor::schema>();
+}
+
 // aten::add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor
 at::Tensor add_Tensor::call(const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha) {
     
