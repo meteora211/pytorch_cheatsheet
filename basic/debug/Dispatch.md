@@ -13,15 +13,93 @@ b = torch.randn(3,3)
 c = a + b
 ```
 
+UML ref
+
+```mermaid
+classDiagram
+classA <|-- classB : Inheritance
+classC *-- classD : Composition
+classE o-- classF : Aggregation
+classG <-- classH : Association
+classI -- classJ : Link(Solid)
+classK <.. classL : Dependency
+classM <|.. classN : Realization
+classO .. classP : Link(Dashed)
+```
+
+
+
+
+
+## Dispatch
+
+### DispatchKey
+
+
+
+### Dispatcher
+
+`Dispatcher` register `operatorLookupTable_`
+
+```c++
+
+```
+
+
+
+```c++
+  explicit OperatorHandle(std::list<Dispatcher::OperatorDef>::iterator operatorIterator)
+  : operatorDef_(&*operatorIterator), operatorIterator_(operatorIterator)  {}
+```
+
+
+
+```mermaid
+
+classDiagram
+      Dispatcher *-- OperatorDef : Composition
+      Dispatcher *-- OperatorHandle : Composition
+      OperatorHandle *-- OperatorDef : Composition
+      OperatorDef *-- OperatorEntry : Composition
+      class Dispatcher {
+        -list~OperatorDef~ operators_
+        -flat_hash_map~OperatorName, OperatorHandle~ operatorLookupTable_;
+      }
+      
+      class OperatorDef {
+        impl::OperatorEntry op;
+      }
+      class OperatorEntry {
+          std::array~KernelFunction, c10::num_runtime_entries~ dispatchTable_;
+          DispatchKeyExtractor dispatchKeyExtractor_;
+      }
+      class OperatorHandle {
+          Dispatcher::OperatorDef* operatorDef_;
+          std::list~Dispatcher::OperatorDef~::iterator operatorIterator_;
+      }
+```
+
 
 
 ## Code generation
 
+### Generated code
 
+- `torch/csrc/autograd/generated/python_variable_methods.cpp`
+- `build/aten/src/ATen/core/TensorBody.h`
+- `build/aten/src/ATen/Operators_2.cpp`
+- `torch/csrc/autograd/generated/VariableType_2.cpp`
+- `build/aten/src/ATen/RedispatchFunctions.h`
+- `build/aten/src/ATen/RegisterCPU.cpp`
+- ` build/aten/src/ATen/UfuncCPU_add.cpp`
 
 ## Backtrace analysis
 
-`torch/include/ATen/ops/add_ops.h` generated `add__Tensor`
+### Overall progress
+
+#### `add__Tensor` struct
+
+`torch/include/ATen/ops/add_ops.h` generated `add__Tensor` struct. `add__Tensor::call` is called to dispatch the actual kernel
 
 ```c++
 struct TORCH_API add_Tensor {
@@ -36,27 +114,91 @@ struct TORCH_API add_Tensor {
 };
 ```
 
-Find `OperatorHandle` for `add`
+#### Create `OperatorHandle` and register into `Dispatcher`
+
+The generated `add__Tensor::call` will create a handle `TypedOperatorHandle<add__Tensor::schema>` to dispatch the  actual call
+
+```c++
+// aten::add.Tensor(Tensor self, Tensor other, *, Scalar alpha=1) -> Tensor
+at::Tensor add_Tensor::call(const at::Tensor & self, const at::Tensor & other, const at::Scalar & alpha) {
+    static auto op = create_add_Tensor_typed_handle(); // <------- Create handle here
+    return op.call(self, other, alpha); // <------- Start dispatch
+}
+```
+
+In function `create_add_Tensor_typed_handle`, The`OperatorHandle` for `add` is created from a singleton `Dispatcher`
+
 ```c++
   return c10::Dispatcher::singleton()
       .findSchemaOrThrow(add__Tensor::name, add__Tensor::overload_name)
       .typed<add__Tensor::schema>();
 ```
 
-Get `KernelFunction` for `add`
+The `findSchemaOrThrow` will try to find the given `OperatorName` first. If it's not found, a new `OperatorHandle` is created and registered in `operatorLookupTable_` with given `OperatorName`:
+
+```c++
+// Postcondition: caller is responsible for disposing of registration when they
+// are done
+OperatorHandle Dispatcher::findOrRegisterName_(const OperatorName& op_name) {
+  const auto found = findOp(op_name);
+  if (found != c10::nullopt) {
+    return *found;
+  }
+
+  operators_.emplace_back(OperatorName(op_name));
+  OperatorHandle handle(--operators_.end());
+  operatorLookupTable_.write([&] (ska::flat_hash_map<OperatorName, OperatorHandle>& operatorLookupTable) {
+    operatorLookupTable.emplace(op_name, handle);
+  });
+
+  return handle;
+}
+```
+
+#### `KernelFunction` 
+
+After `OperatorHandle` is created,  `op.call(self, other, alpha)` will forward to `Dispatcher::call`:
 
 ```c++
   auto dispatchKeySet = op.operatorDef_->op.dispatchKeyExtractor()
-    .template getDispatchKeySetUnboxed<Args...>(args...);
-  const KernelFunction& kernel = op.operatorDef_->op.lookup(dispatchKeySet);
-    return kernel.template call<Return, Args...>(op, dispatchKeySet, std::forward<Args>(args)...);
+    .template getDispatchKeySetUnboxed<Args...>(args...); // Calculate keyset
+  const KernelFunction& kernel = op.operatorDef_->op.lookup(dispatchKeySet); // lookup kernel function
+  return kernel.template call<Return, Args...>(op, dispatchKeySet, std::forward<Args>(args)...);// actual dispatch call
+```
+
+`Dispatcher` will fetch the `dispatchKeySet` from `.template getDispatchKeySetUnboxed<Args...>(args...)`.  Check this [link](https://stackoverflow.com/questions/610245/where-and-why-do-i-have-to-put-the-template-and-typename-keywords) for the usage of `.temlplate func<T>`  and [MultiDispatchKeySet](#MultiDispatchKeySet) for the details of keyset calculation.
+
+The `op.lookup` find the kernel in `OperatorEntry::dispatchTable_`:
+
+```c++
+  const KernelFunction& lookup(DispatchKeySet ks) const {
+    const auto idx = ks.getDispatchTableIndexForDispatchKeySet();
+    if (C10_UNLIKELY(idx == -1)) {
+      reportError(ks.highestPriorityTypeId());
+    }
+    const auto& kernel = dispatchTable_[idx]; // <----- find kernel here
+    // A valid kernel *always* has a boxed kernel and *may* have an
+    // unboxed kernel. However, we typically do unboxed calls in at::
+    // APIs, where the kernel 1) will very likely be valid and 2)
+    // should have an unboxed kernel. Checking the unboxed kernel
+    // first will allow us to avoid touching the boxed kernel at all
+    // in the common case.
+    if (C10_UNLIKELY(!kernel.isValidUnboxed())) {
+      if (!kernel.isValid()) {
+        reportError(ks.highestPriorityTypeId());
+      }
+    }
+    return kernel;
+  }
 ```
 
 
 
-### CPP call stack
 
-#### `/torch/csrc/autograd/generated/python_variable_methods.cpp`
+
+### Full cpp call stack
+
+#### `torch/csrc/autograd/generated/python_variable_methods.cpp`
 
 - `__add__` is binding to `THPVariable_add`
 
@@ -752,5 +894,71 @@ template <typename T>
 C10_HOST_DEVICE C10_ALWAYS_INLINE T add(T self, T other, T alpha) __ubsan_ignore_undefined__ {
   return self + alpha * other; // <------- CALLED HERE
 }
+```
+
+
+
+## Code segment
+
+### MultiDispatchKeySet
+
+```c++
+  // A small gadget to extract the DispatchKeySet from types which are known
+  // to have it.  Used to extract dispatch keys from unboxed calls.
+  struct MultiDispatchKeySet : at::IterArgs<MultiDispatchKeySet> {
+    DispatchKeySet ts;
+    void operator()(const at::Tensor& x) {
+      ts = ts | x.key_set();
+    }
+    void operator()(const c10::optional<at::Tensor>& x) {
+      if (x.has_value()) {
+        ts = ts | x->key_set();
+      }
+    }
+    void operator()(at::ArrayRef<at::Tensor> xs) {
+      for (const auto& x : xs) {
+        ts = ts | x.key_set();
+      }
+    }
+    // Tensor?[] translates to this case.
+    void operator()(const c10::List<c10::optional<at::Tensor>>& xs) {
+      for (c10::optional<at::Tensor> x : xs) {
+        if (x.has_value()) {
+          ts = ts | x.value().key_set();
+        }
+      }
+    }
+    // Structured Tensor[] translates to this case
+    void operator()(const at::ITensorListRef& xs) {
+      for (const auto& x : xs) {
+        ts = ts | x.key_set();
+      }
+    }
+    [[noreturn]] void operator()(at::ArrayRef<c10::optional<at::Tensor>>) {
+      // Just checking that the handling of Tensor?[] didn't change.
+      TORCH_INTERNAL_ASSERT(false);
+    }
+    void operator()(const at::Generator& gen) {
+      if (gen.defined()) {
+        ts = ts | gen.key_set();
+      }
+    }
+    void operator()(const std::optional<at::Generator>& gen) {
+      if (gen.has_value() && gen->defined()) {
+        ts = ts | gen->key_set();
+      }
+    }
+    template <typename T>
+    void operator()(const T&) {
+      // do nothing
+    }
+  };
+
+  // NB: take by const reference (Don't do universal forwarding here! You
+  // don't want to move into this function!)
+  template <typename... Args>
+  DispatchKeySet multi_dispatch_key_set(const Args&... args) {
+    return MultiDispatchKeySet().apply(args...).ts;
+  }
 ```
 
