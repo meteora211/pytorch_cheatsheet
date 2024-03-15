@@ -2,7 +2,7 @@
 
 ## Add example
 
-The discussion will based on a simple add test case.
+The discussion will based on a simple add test case and pytorch main branch version: `2.3.0a0+git96ed37a`.
 
 ```
 import torch
@@ -31,31 +31,296 @@ classO .. classP : Link(Dashed)
 
 
 
-## Dispatch
-
-### DispatchKey
 
 
+## Registration
+
+### Macro
+
+Pytorch defines `TORCH_LIBRARY` and `TORCH_LIBRARY_IMPL` macros in `torch/library.h` to register operators:
+
+```c++
+TORCH_LIBRARY(myops, m) {
+  m.def("add(Tensor self, Tensor other) -> Tensor");
+}
+
+TORCH_LIBRARY_IMPL(myops, CPU, m) {
+  // m is a torch::Library; methods on it will define
+  // CPU implementations of operators in the myops namespace.
+  // It is NOT valid to call torch::Library::def()
+  // in this context.
+  m.impl("add", add_cpu_impl);
+}
+```
+
+The macro is defined as following:
+
+```c++
+#define TORCH_LIBRARY_IMPL(ns, k, m) _TORCH_LIBRARY_IMPL(ns, k, m, C10_UID)
+
+#define _TORCH_LIBRARY_IMPL(ns, k, m, uid)                                \
+  static void C10_CONCATENATE(                                            \
+      TORCH_LIBRARY_IMPL_init_##ns##_##k##_, uid)(torch::Library&);       \
+  static const torch::detail::TorchLibraryInit C10_CONCATENATE(           \
+      TORCH_LIBRARY_IMPL_static_init_##ns##_##k##_, uid)(                 \
+      torch::Library::IMPL,                                               \
+      (c10::impl::dispatch_key_allowlist_check(c10::DispatchKey::k)       \
+           ? &C10_CONCATENATE(TORCH_LIBRARY_IMPL_init_##ns##_##k##_, uid) \
+           : [](torch::Library&) -> void {}),                             \
+      #ns,                                                                \
+      c10::make_optional(c10::DispatchKey::k),                            \
+      __FILE__,                                                           \
+      __LINE__);                                                          \
+  void C10_CONCATENATE(                                                   \
+      TORCH_LIBRARY_IMPL_init_##ns##_##k##_, uid)(torch::Library & m)
+
+#define TORCH_LIBRARY(ns, m)                                                   \
+  static void TORCH_LIBRARY_init_##ns(torch::Library&);                        \
+  static const torch::detail::TorchLibraryInit TORCH_LIBRARY_static_init_##ns( \
+      torch::Library::DEF,                                                     \
+      &TORCH_LIBRARY_init_##ns,                                                \
+      #ns,                                                                     \
+      c10::nullopt,                                                            \
+      __FILE__,                                                                \
+      __LINE__);                                                               \
+```
+
+Let's expand it:
+
+```c++
+// TORCH_LIBRARY
+static void TORCH_LIBRARY_init_myops(torch::Library&);
+static const torch::detail::TorchLibraryInit TORCH_LIBRARY_static_init_myops(
+    torch::Library::DEF,
+    &TORCH_LIBRARY_init_myops,
+    "myops",
+    c10::nullopt,
+    "/app/example.cpp",
+    37);
+void TORCH_LIBRARY_init_myops(torch::Library& m) {
+  m.def("add(Tensor self, Tensor other) -> Tensor");
+}
+
+// TORCH_LIBRARY_IMPL
+static void TORCH_LIBRARY_IMPL_init_myops_CPU_C10_UID)(torch::Library&);
+static const torch::detail::TorchLibraryInit TORCH_LIBRARY_IMPL_static_init_myops_CPU_C10_UID(
+    torch::Library::IMPL,
+    (c10::impl::dispatch_key_allowlist_check(c10::DispatchKey::CPU) ? 
+        &TORCH_LIBRARY_IMPL_init_myops_CPU_C10_UID : [](torch::Library&) -> void {}),
+    "myops",
+    c10::make_optional(c10::DispatchKey::CPU),
+    "/app/example.cpp",
+    43);
+
+void TORCH_LIBRARY_IMPL_init_myops_CPU_C10_UID(torch::Library & m) {
+  m.impl("add", add_cpu_impl);
+}
+```
+
+### `torch::Library`
+
+#### `TorchLibraryInit` helper
+
+To register the operators to `torch::Library`, there's a helper class `TorchLibraryInit` which helps to create `Library` object and execute `InitFn` for the it:
+
+```c++
+class TorchLibraryInit final {
+ private:
+  using InitFn = void(Library&);
+  Library lib_;
+
+ public:
+  TorchLibraryInit(
+      Library::Kind kind,
+      InitFn* fn,
+      const char* ns,
+      c10::optional<c10::DispatchKey> k,
+      const char* file,
+      uint32_t line)
+      : lib_(kind, ns, k, file, line) {
+    fn(lib_);
+  }
+};
+```
+
+Regarding the above expanded macro code, `TORCH_LIBRARY` creates an library with empty dispatch key and then call `Library::def` to init the library while `TORCH_LIBRARY_IMPL` uses `Library::impl` for initialization.
+
+#### `def` and `impl`
+
+The `def` and `impl` finally register the operator into `Dispatcher`
+
+```c++
+  template <typename Schema>
+  Library& def(
+      Schema&& raw_schema,
+      const std::vector<at::Tag>& tags = {},
+      _RegisterOrVerify rv = _RegisterOrVerify::REGISTER) & {
+    c10::FunctionSchema s = schema(std::forward<Schema>(raw_schema)); // Create FunctionSchema from function string
+    return _def(std::move(s), nullptr, tags, rv); // Actual registration
+  }
+```
+
+The `raw_schema` is `const char*` of function signature and will be converted into `FunctionSchema`.
+
+```c++
+Library& Library::_def(c10::FunctionSchema&& schema, c10::OperatorName* out_name, const std::vector<at::Tag>& tags, _RegisterOrVerify rv) & {
+  // ... deleted code ...
+  switch (rv) {
+    case _RegisterOrVerify::REGISTER:
+      if (impl_abstract_pystub_.has_value()) {
+        registrars_.emplace_back(
+          c10::Dispatcher::singleton().registerAbstractImplPyStub(
+            schema.operator_name(),
+            impl_abstract_pystub_->first,
+            impl_abstract_pystub_->second)
+        );
+      }
+      registrars_.emplace_back(
+        c10::Dispatcher::singleton().registerDef(
+          std::move(schema),
+          debugString(file_, line_),
+          tags
+        ) // <---------- Registered into Dispatcher
+      );
+      break;
+    case _RegisterOrVerify::VERIFY:
+      c10::Dispatcher::singleton().waitForDef(schema);
+      break;
+  }
+  return *this;
+}
+```
+
+Finally, the provided function signature is registered by `Dispatcher::registerDef`. This process is also similar for `TORCH_LIBRARY_IMPL` macro:
+
+```c++
+  template <typename Name, typename Func>
+  Library& impl(
+      Name name,
+      Func&& raw_f,
+      _RegisterOrVerify rv = _RegisterOrVerify::REGISTER) & {
+    CppFunction f(std::forward<Func>(raw_f));
+    return _impl(name, std::move(f), rv);
+  }
+```
+
+Pytorch wraps all callable kernel function into `CppFunction`. And then register it into `Dispatcher`.
+
+```c++
+Library& Library::_impl(const char* name_str, CppFunction&& f, _RegisterOrVerify rv) & {
+  at::OperatorName name = _parseNameForLib(name_str);
+  auto dispatch_key = f.dispatch_key_.has_value() ? f.dispatch_key_ : dispatch_key_;
+  switch (rv) {
+    case _RegisterOrVerify::REGISTER:
+      registrars_.emplace_back(
+        c10::Dispatcher::singleton().registerImpl(
+          std::move(name),
+          dispatch_key,
+          std::move(f.func_),
+          f.cpp_signature_,
+          std::move(f.schema_),
+          debugString(std::move(f.debug_), file_, line_)
+        ) // <-------- Registered into Dispatcher
+      );
+      break;
+    case _RegisterOrVerify::VERIFY:
+      c10::Dispatcher::singleton().waitForImpl(name, dispatch_key);
+      break;
+  }
+  return *this;
+}
+```
 
 ### Dispatcher
 
-`Dispatcher` register `operatorLookupTable_`
+The final registration is to register the actual function into `Dispatcher` which will dispatch to the right kernel according to `DispatchKey` at runtime.
+
+The registration code is just listed as following, and will go through the details of `Dispatcher` later:
 
 ```c++
+RegistrationHandleRAII Dispatcher::registerDef(FunctionSchema schema, std::string debug, std::vector<at::Tag> tags) {
+  // we need a lock to avoid concurrent writes
+  std::lock_guard<std::mutex> lock(guard_->mutex);
 
+  OperatorName op_name = schema.operator_name();
+  auto op = findOrRegisterName_(op_name); // <------ Register to operatorLookupTable_
+
+  op.operatorDef_->op.registerSchema(std::move(schema), std::move(debug), std::move(tags));
+  listeners_->callOnOperatorRegistered(op);
+
+  // NB: do not increment the counts until AFTER error checking
+  ++op.operatorDef_->def_count;
+  ++op.operatorDef_->def_and_impl_count;
+
+  cond_var_.notify_all();
+
+  return RegistrationHandleRAII([guard = this->guard_, this, op, op_name] {
+    // we need a lock to avoid concurrent writes
+    std::lock_guard<std::mutex> lock(guard->mutex);
+    if (!guard->alive.load()) {
+      return;
+    }
+    deregisterDef_(op, op_name);
+  });
+}
 ```
 
 
 
 ```c++
-  explicit OperatorHandle(std::list<Dispatcher::OperatorDef>::iterator operatorIterator)
-  : operatorDef_(&*operatorIterator), operatorIterator_(operatorIterator)  {}
+RegistrationHandleRAII Dispatcher::registerImpl(
+  OperatorName op_name,
+  c10::optional<DispatchKey> dispatch_key,
+  KernelFunction kernel,
+  c10::optional<impl::CppSignature> cpp_signature,
+  std::unique_ptr<FunctionSchema> inferred_function_schema,
+  std::string debug
+) {
+  std::lock_guard<std::mutex> lock(guard_->mutex);
+
+  auto op = findOrRegisterName_(op_name);
+
+  auto handle = op.operatorDef_->op.registerKernel(
+    *this,
+    dispatch_key,
+    std::move(kernel),
+    std::move(cpp_signature),
+    std::move(inferred_function_schema),
+    std::move(debug)
+  ); // <------ Register actual function to OperatorEntry
+
+  ++op.operatorDef_->def_and_impl_count;
+
+  cond_var_.notify_all();
+
+  return RegistrationHandleRAII([guard = this->guard_, this, op, op_name, dispatch_key, handle] {
+    std::lock_guard<std::mutex> lock(guard->mutex);
+    if (!guard->alive.load()) {
+      return;
+    }
+    deregisterImpl_(op, op_name, dispatch_key, handle);
+  });
+}
 ```
+
+
+
+## Dispatch
+
+### Dispatcher
+
+There're two steps registration responding to `TORCH_LIBRARY` and `TORCH_LIBRARY_IMPL`, the first one registers an overall `OperatorHandle` for given function signature, for example `add`. But this function might be executed on different backends, i.e. cpu, gpu, etc. So there's another step `TORCH_LIBRARY_IMPL` to register the actual function on specific backend with dispatchkey.
+
+Accordingly, those two step registration is token in place on different data structure:
+
+- `Dispatcher` maintains a map`flat_hash_map<OperatorName, OperatorHandle> operatorLookupTable_` for `OperatorHandle` registration
+- `OperatorEntry` maintains a table `std::array<KernelFunction, c10::num_runtime_entries> dispatchTable_` to fetch the actual kernel function.
+
+The UML for core data structure is shown as following
 
 
 
 ```mermaid
-
 classDiagram
       Dispatcher *-- OperatorDef : Composition
       Dispatcher *-- OperatorHandle : Composition
@@ -79,6 +344,25 @@ classDiagram
       }
 ```
 
+### DispatchKey
+
+TODO
+
+### Boxing and UnBoxing
+
+TODO
+
+### Revisit Registration
+
+```mermaid
+graph TD
+A[TORCH_LIBRARY] --> |TorchLibraryInit| B(Library::def) --> C(Dispatcher::registerDef) --> D(Dispatcher::operatorLookupTable_)
+
+E[TORCH_LIBRARY_IMPL] --> |TorchLibraryInit| F(Library::impl) --> G(Dispatcher::registerImpl) --> H(OperatorHandle) --> I(OperatorEntry::registerKernel) --> J(OperatorEntry::dispatchTable_)
+
+D --> |OperatorName| H
+```
+
 
 
 ## Code generation
@@ -96,6 +380,17 @@ classDiagram
 ## Backtrace analysis
 
 ### Overall progress
+
+#### Registration
+
+The generated code `build/aten/src/ATen/RegisterCPU.cpp` register the CPU kernel for `add.Tensor`.
+
+```c++
+TORCH_LIBRARY_IMPL(aten, CPU, m) {
+// ...
+m.impl("add.Tensor", TORCH_FN(wrapper_CPU_add_Tensor));
+}
+```
 
 #### `add__Tensor` struct
 
@@ -901,6 +1196,8 @@ C10_HOST_DEVICE C10_ALWAYS_INLINE T add(T self, T other, T alpha) __ubsan_ignore
 ## Code segment
 
 ### MultiDispatchKeySet
+
+TODO
 
 ```c++
   // A small gadget to extract the DispatchKeySet from types which are known
