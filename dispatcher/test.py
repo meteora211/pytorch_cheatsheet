@@ -1,4 +1,8 @@
 import torch
 
-torch.ops.load_library("build/libdispather.so")
-print(torch.ops.myops.myadd(torch.rand(2,2), torch.rand(2,2)))
+torch.ops.load_library("build/libdispatcher.so")
+a, b = torch.rand(2,2), torch.rand(2,2)
+print(a)
+print(b)
+print(a + b)
+print(torch.ops.myops.myadd(a, b))
