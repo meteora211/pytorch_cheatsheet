@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import StepLR
 import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from basic_transformer import BasicAttention
+from basic_transformer import *
 
 # Hyperparameters
 log_interval = 10
@@ -122,7 +122,8 @@ def main():
     # Initialize model weights.
     np.random.seed(0)
 
-    model = MNISTTransformer(BasicAttention(model_dim), model_dim, ffn_hidden).to(device)
+    # model = MNISTTransformer(BasicAttention(model_dim), model_dim, ffn_hidden).to(device)
+    model = MNISTTransformer(MultiHeadAttention(model_dim, 8), model_dim, ffn_hidden).to(device)
     optimizer = optim.SGD(model.parameters(), lr = lr)
 
     for epoch in range(1, num_epochs+1):
